@@ -166,7 +166,7 @@ public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
             //handle cannot connect to own server if ServerSettings.toggleServer is true
             if (!Settings.ServerSettings.ToggleServer)
             {
-                if (!Me.IsConnected)
+                if (Me == null)
                 {
                     ConnectAsClient();
                 }
@@ -238,8 +238,6 @@ public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
     }
 
 }
-
-
 public static class PoePartyPluginExtensions
 {
     public static Element PartyElement(this PoePartyPlugin p)
