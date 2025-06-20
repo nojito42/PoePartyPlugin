@@ -11,20 +11,46 @@ using Vector2 = System.Numerics.Vector2;
 using ExileCore.PoEMemory.Components;
 using Newtonsoft.Json;
 using System.Text;
+using System.Threading.Tasks;
+using ExileCore.PoEMemory;
+using ExileCore.PoEMemory.Elements;
+using System.Linq;
 
 namespace PoePartyPlugin;
 
 public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
 {
 
-    private PartyServer _server;
-    private PartyMember me;
+    public PartyServer PartyServer;
+    public PartyMember Me;
     private Thread clientListenerThread;
-    private bool isConnectedToServer = false;
-
-    private void ConnectAsClient()
+    private async Task<string> ScanForPartyServer(int port, int timeoutMs = 300)
     {
-        if (isConnectedToServer)
+        string localSubnet = "192.168.1."; // à adapter selon ton réseau
+
+        for (int i = 1; i < 255; i++)
+        {
+            string ip = localSubnet + i;
+            using var client = new TcpClient();
+
+            try
+            {
+                var connectTask = client.ConnectAsync(IPAddress.Parse(ip), port);
+                if (await Task.WhenAny(connectTask, Task.Delay(timeoutMs)) == connectTask && client.Connected)
+                {
+                    LogMessage($"Serveur trouvé : {ip}");
+                    return ip;
+                }
+            }
+            catch { } // Ignore les échecs de connexion
+        }
+
+        LogMessage("Aucun serveur trouvé sur le LAN.");
+        return null;
+    }
+    private async void ConnectAsClient()
+    {
+        if (Me != null && Me.IsConnected)
         {
             LogMessage("Déjà connecté.");
             return;
@@ -32,7 +58,7 @@ public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
 
         try
         {
-            me = new PartyMember
+            Me = new PartyMember
             {
                 Name = GameController.Player.GetComponent<Player>().PlayerName ?? "Unknown",
                 Role = "Follower",
@@ -41,16 +67,22 @@ public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
                 TcpClient = new TcpClient()
             };
 
-            me.TcpClient.Connect(IPAddress.Parse("192.168.1.114"), int.Parse(Settings.ServerSettings.Port));
-            var stream = me.Stream;
-            isConnectedToServer = true;
+            string ip = await ScanForPartyServer(int.Parse(Settings.ServerSettings.Port));
+            if (ip == null)
+            {
+                LogError("Impossible de localiser un serveur Party sur le LAN.");
+                return;
+            }
+            Me.TcpClient.Connect(IPAddress.Parse(ip), int.Parse(Settings.ServerSettings.Port));
+            var stream = Me.Stream;
+            Me.IsConnected = true;
 
-            LogMessage($"Connecté en tant que {me.Name} à {me.IPAddress}");
+            LogMessage($"Connecté en tant que {Me.Name} à {Me.IPAddress}");
 
             var hello = new PartyMessage
             {
                 Type = "Hello",
-                Sender = me.Name,
+                Sender = Me.Name,
                 Content = ""
             };
 
@@ -64,23 +96,20 @@ public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
         catch (Exception ex)
         {
             LogError($"Connexion échouée : {ex.Message}");
-            me?.Disconnect();
-            isConnectedToServer = false;
+            this.DisconnectClientOrServer();
         }
     }
-
-
     private void ClientListenerLoop()
     {
         var buffer = new byte[4096];
 
         try
         {
-            while (isConnectedToServer && me.TcpClient.Connected)
+            while (Me.IsConnected && Me.TcpClient.Connected)
             {
-                if (me.Stream.DataAvailable)
+                if (Me.Stream.DataAvailable)
                 {
-                    int bytesRead = me.Stream.Read(buffer, 0, buffer.Length);
+                    int bytesRead = Me.Stream.Read(buffer, 0, buffer.Length);
                     if (bytesRead == 0) break;
 
                     var json = Encoding.UTF8.GetString(buffer, 0, bytesRead);
@@ -100,15 +129,15 @@ public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
         }
         finally
         {
-            me.Disconnect();
-            isConnectedToServer = false;
+            Me.Disconnect();
+            Me.IsConnected = false;
             LogMessage("Déconnecté du serveur.");
         }
     }
     public override bool Initialise()
     {
-       
-        Settings.ServerSettings.ToggleServer.OnValueChanged += (toggle,value) =>
+
+        Settings.ServerSettings.ToggleServer.OnValueChanged += (toggle, value) =>
         {
             ToggleServerConnect(value);
         };
@@ -124,10 +153,10 @@ public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
             else
             {
                 LogMessage("PoePartyPlugin disabled.");
-                if (_server != null)
+                if (PartyServer != null)
                 {
-                    _server.Stop();
-                    _server = null;
+                    PartyServer.Stop();
+                    PartyServer = null;
                 }
             }
         };
@@ -137,7 +166,7 @@ public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
             //handle cannot connect to own server if ServerSettings.toggleServer is true
             if (!Settings.ServerSettings.ToggleServer)
             {
-                if(!isConnectedToServer)
+                if (!Me.IsConnected)
                 {
                     ConnectAsClient();
                 }
@@ -150,38 +179,33 @@ public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
         };
         return true;
     }
-
     private void ToggleServerConnect(bool value)
     {
         if (value)
         {
-            _server = new PartyServer(this);
-            _server.Start();
+            PartyServer = new PartyServer(this);
+            PartyServer.Start();
             LogMessage("Party server started.");
         }
         else
         {
-            if (_server == null) return;
-            _server.Stop();
-            _server = null;
+            if (PartyServer == null) return;
+            PartyServer.Stop();
+            PartyServer = null;
             LogMessage("Party server stopped.");
         }
     }
-
-    public override void AreaChange(AreaInstance area)
-    {
-    }
-
     public override Job Tick()
     {
         return null;
     }
-
     public override void Render()
     {
-        if (_server != null && _server.IsRunning)
+        if (PartyServer != null && PartyServer.IsRunning)
         {
-            var text = _server.ToString();
+
+            if (this.IsAnyPanelOpen()) return;
+            var text = PartyServer.ToString();
             var textSize = Graphics.MeasureText(text);
             var partyRect = GameController.IngameState.IngameUi.PartyElement.GetClientRect();
             var position = new Vector2(.2f, partyRect.Top - textSize.Y - 0.2f);
@@ -197,36 +221,53 @@ public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
             Graphics.DrawFrame(partyRect, Color.Green, 3);
         }
     }
-
     public override void Dispose()
     {
-        if (_server != null)
-        {
-            _server.Stop();
-            _server = null;
-            LogMessage("Party server disposed.");
-        }
+        this.DisconnectClientOrServer();
         base.Dispose();
     }
     public override void OnClose()
     {
-        if (_server != null)
-        {
-            _server.Stop();
-            _server = null;
-            LogMessage("Party server closed.");
-        }
+        this.DisconnectClientOrServer();
         base.OnClose();
     }
     public override void OnUnload()
     {
-        if (_server != null)
-        {
-            _server.Stop();
-            _server = null;
-            LogMessage("Party server unloaded.");
-        }
+        this.DisconnectClientOrServer();
         base.OnUnload();
     }
 
+}
+
+
+public static class PoePartyPluginExtensions
+{
+    public static Element PartyElement(this PoePartyPlugin p)
+    {
+        return p.GameController.IngameState.IngameUi.PartyElement;
+    }
+
+    public static bool IsAnyPanelOpen(this PoePartyPlugin p)
+    {
+        var ui = p.GameController.IngameState.IngameUi;
+        return ui.FullscreenPanels.Any(p => p.IsVisible) ||
+            ui.LargePanels.Any(p => p.IsVisible) ||
+            ui.OpenLeftPanel.IsVisible;
+    }
+    public static void DisconnectClientOrServer(this PoePartyPlugin p)
+    {
+        if (p.PartyServer != null)
+        {
+            p.PartyServer.Stop();
+            p.PartyServer = null;
+            p.LogMessage("Party server disconnected.");
+        }
+        else if (p.Me?.IsConnected == true)
+        {
+            p.Me?.Disconnect();
+            p.LogMessage("Disconnected from the server.");
+            p.Me.IsConnected = false;
+            p.Me = null;
+        }
+    }
 }

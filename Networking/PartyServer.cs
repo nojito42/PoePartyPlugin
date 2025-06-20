@@ -25,6 +25,7 @@ public class PartyMember
     public string IPAddress { get; set; }
     public bool IsLocal { get; set; } = false;
     public DateTime LastSeen { get; set; } = DateTime.Now;
+    public bool IsConnected = false;
 
     public TcpClient TcpClient { get; set; }
     public NetworkStream Stream => TcpClient?.GetStream();
@@ -35,7 +36,7 @@ public class PartyMember
     }
 }
 
-internal class PartyServer(PoePartyPlugin plugin)
+public class PartyServer(PoePartyPlugin plugin)
 {
     public readonly PoePartyPlugin Plugin = plugin;
     private TcpListener _listener;
