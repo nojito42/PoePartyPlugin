@@ -135,7 +135,7 @@ public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
         Settings.PartySettings.ConnectToServer.OnPressed += () =>
         {
             //handle cannot connect to own server if ServerSettings.toggleServer is true
-            if (Settings.ServerSettings.ToggleServer)
+            if (!Settings.ServerSettings.ToggleServer)
             {
                 if(!isConnectedToServer)
                 {
