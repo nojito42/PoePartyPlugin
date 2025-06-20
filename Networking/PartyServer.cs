@@ -41,11 +41,11 @@ public class PartyServer(PoePartyPlugin plugin)
     public readonly PoePartyPlugin Plugin = plugin;
     private TcpListener _listener;
     private Thread _listenerThread;
-    private readonly ConcurrentDictionary<string, PartyMember> _partyMembers = new();
+    public readonly ConcurrentDictionary<string, PartyMember> PartyMembers = new();
     public bool IsRunning = false;
 
     public string ServerIP { get; set; }
-    public int ConnectedPartyMembers => _partyMembers.Count;
+    public int ConnectedPartyMembers => PartyMembers.Count;
 
     public static string GetLocalIPv4()
     {
@@ -97,7 +97,7 @@ public class PartyServer(PoePartyPlugin plugin)
                     var tcpClient = _listener.AcceptTcpClient();
                     var clientIP = ((IPEndPoint)tcpClient.Client.RemoteEndPoint)?.Address.ToString();
 
-                    if (_partyMembers.Values.Any(c => c.IPAddress == clientIP))
+                    if (PartyMembers.Values.Any(c => c.IPAddress == clientIP))
                     {
                         Plugin.LogMessage($"Connexion refusée pour {clientIP} : IP déjà connectée");
                         tcpClient.Close();
@@ -153,17 +153,18 @@ public class PartyServer(PoePartyPlugin plugin)
                         {
                             Plugin.LogMessage($"Refusé : {member.Name} n'est pas dans la party locale.");
                             member.Disconnect();
+                            
                             return;
                         }
 
-                        if (_partyMembers.ContainsKey(member.Name))
+                        if (PartyMembers.ContainsKey(member.Name))
                         {
                             Plugin.LogMessage($"Nom déjà utilisé : {member.Name}");
                             member.Disconnect();
                             return;
                         }
 
-                        _partyMembers.TryAdd(member.Name, member);
+                        PartyMembers.TryAdd(member.Name, member);
                         Plugin.LogMessage($"Client accepté : {member.Name} ({member.IPAddress})");
                         identified = true;
 
@@ -193,7 +194,7 @@ public class PartyServer(PoePartyPlugin plugin)
         finally
         {
             if (!string.IsNullOrEmpty(member.Name))
-                _partyMembers.TryRemove(member.Name, out _);
+                PartyMembers.TryRemove(member.Name, out _);
 
             member.Disconnect();
             Plugin.LogMessage($"Déconnexion de : {member.Name ?? member.IPAddress}");
@@ -205,7 +206,7 @@ public class PartyServer(PoePartyPlugin plugin)
         var json = JsonSerializer.Serialize(message);
         var data = Encoding.UTF8.GetBytes(json);
 
-        var tasks = _partyMembers.Values
+        var tasks = PartyMembers.Values
             .Where(m => m.TcpClient?.Connected == true)
             .Select(m => SendDataToClient(m, data));
 
@@ -214,7 +215,7 @@ public class PartyServer(PoePartyPlugin plugin)
 
     public async Task SendMessageToClient(string name, PartyMessage message)
     {
-        if (_partyMembers.TryGetValue(name, out var member) && member.TcpClient?.Connected == true)
+        if (PartyMembers.TryGetValue(name, out var member) && member.TcpClient?.Connected == true)
         {
             var json = JsonSerializer.Serialize(message);
             var data = Encoding.UTF8.GetBytes(json);
@@ -239,10 +240,10 @@ public class PartyServer(PoePartyPlugin plugin)
         if (!IsRunning) return;
         IsRunning = false;
 
-        foreach (var m in _partyMembers.Values)
+        foreach (var m in PartyMembers.Values)
             m.Disconnect();
 
-        _partyMembers.Clear();
+        PartyMembers.Clear();
 
         try
         {
@@ -278,5 +279,12 @@ static class PartyServerExtensions
                      .PartyElement
                      .PlayerElements
                      .Any(p => p.PlayerName == member.Name);
+    }
+
+    public static void DisconnectClientOrServer(this PartyServer server,PartyMember member)
+    {
+     
+        server.PartyMembers.TryRemove(member.Name, out _);
+        member.Disconnect();
     }
 }

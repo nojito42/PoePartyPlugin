@@ -42,7 +42,7 @@ public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
                     return ip;
                 }
             }
-            catch { } // Ignore les échecs de connexion
+            catch { }
         }
 
         LogMessage("Aucun serveur trouvé sur le LAN.");
@@ -129,8 +129,7 @@ public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
         }
         finally
         {
-            Me.Disconnect();
-            Me.IsConnected = false;
+           this.DisconnectClientOrServer();
             LogMessage("Déconnecté du serveur.");
         }
     }
@@ -262,9 +261,7 @@ public static class PoePartyPluginExtensions
         }
         else if (p.Me?.IsConnected == true)
         {
-            p.Me?.Disconnect();
-            p.LogMessage("Disconnected from the server.");
-            p.Me.IsConnected = false;
+            p.PartyServer.DisconnectClientOrServer(p.Me);
             p.Me = null;
         }
     }
