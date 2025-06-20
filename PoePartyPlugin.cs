@@ -41,7 +41,7 @@ public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
                 TcpClient = new TcpClient()
             };
 
-            me.TcpClient.Connect(IPAddress.Parse(me.IPAddress), int.Parse(Settings.ServerSettings.Port));
+            me.TcpClient.Connect(IPAddress.Parse("192.168.1.114"), int.Parse(Settings.ServerSettings.Port));
             var stream = me.Stream;
             isConnectedToServer = true;
 
