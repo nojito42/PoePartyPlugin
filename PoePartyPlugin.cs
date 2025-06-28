@@ -15,6 +15,9 @@ using System.Threading.Tasks;
 using ExileCore.PoEMemory;
 using ExileCore.PoEMemory.Elements;
 using System.Linq;
+using PoePartyPlugin.Memory;
+using ExileCore.Shared.Helpers;
+using System.Windows.Forms;
 
 namespace PoePartyPlugin;
 
@@ -24,6 +27,7 @@ public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
     public PartyServer PartyServer;
     public PartyMember Me;
     private Thread clientListenerThread;
+    private MagicInput MagicInput;
     private async Task<string> ScanForPartyServer(int port, int timeoutMs = 300)
     {
         string localSubnet = "192.168.1."; // à adapter selon ton réseau
@@ -135,7 +139,7 @@ public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
     }
     public override bool Initialise()
     {
-
+        MagicInput = new MagicInput(this);
         Settings.ServerSettings.ToggleServer.OnValueChanged += (toggle, value) =>
         {
             ToggleServerConnect(value);
@@ -194,10 +198,38 @@ public class PoePartyPlugin : BaseSettingsPlugin<PoePartyPluginSettings>
             LogMessage("Party server stopped.");
         }
     }
-    public override Job Tick()
+
+    bool doonce = false;
+    public override Job Tick()  
     {
+        MagicInput?.Tick();
+        if(Input.IsKeyDown(Keys.NumPad6))
+        {
+            
+                NewMethod();
+            
+          
+            
+        }
+     
         return null;
     }
+
+    private void NewMethod()
+    {
+        MagicInput?.UpdateSkillId(10404);
+        var nearestValidENtity = GameController.EntityListWrapper
+            .OnlyValidEntities
+            .Where(x => x.IsValid && x.Id != GameController.Player.Id && x.DistancePlayer > 100  && x.IsAlive )
+            .OrderBy(x => x.DistancePlayer)
+            .FirstOrDefault();
+        MagicInput?.InvokeCastSkillWithPosition3(nearestValidENtity.GridPosNum.RoundToVector2I(),34817);
+        LogError("Casting skill on nearest valid entity at position: " + nearestValidENtity.GridPosNum.RoundToVector2I() + " " + nearestValidENtity.RenderName);
+        //MagicInput?.InvokeCastSkillWithPosition3(new Vector2(100, 100), 34817, 0); // Example position
+        MagicInput?.InvokeCastSkillWithPosition3(GameController.Player.GridPosNum.RoundToVector2I(),10505); // Cast on self
+        Thread.Sleep(100); // Wait for the skill to be cast 
+    }
+
     public override void Render()
     {
         if (PartyServer != null && PartyServer.IsRunning)
